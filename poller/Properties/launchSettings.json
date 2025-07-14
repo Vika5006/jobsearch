@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "poller": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7181",
+      "launchBrowser": false
+    }
+  }
+}
