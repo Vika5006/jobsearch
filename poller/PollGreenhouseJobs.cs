@@ -2,8 +2,8 @@ using System.Net;
 using System.Net.Mail;
 using System.Text.Json;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Twilio;
 using Twilio.Rest.Api.V2010.Account;
 using Twilio.Types;
@@ -21,8 +21,9 @@ namespace JobSearch
 
     public class PollGreenhouseJobs
     {
-        public PollGreenhouseJobs(IConfiguration config)
+        public PollGreenhouseJobs(IConfiguration config, ILogger<PollGreenhouseJobs> logger)
         {
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _config = config ?? throw new ArgumentNullException(nameof(config));
         }
         public async Task<List<JobPosting>> PollCompanyJobsAsync(string companyToken, string[] keywords)
@@ -92,27 +93,18 @@ namespace JobSearch
             TwilioClient.Init(_config["TWILIO_SID"], _config["TWILIO_AUTH"]);
             var voiceCallbackUrl = _config["VOICE_CALLBACK_URL"];
 
-            await CallResource.CreateAsync(new CreateCallOptions (
+            var callOptions = new CreateCallOptions(
                 to: new PhoneNumber(_config["MY_PHONE"]),
-                from: new PhoneNumber(_config["TWILIO_NUMBER"]))
+                from: new PhoneNumber(_config["TWILIO_NUMBER"])
+            )
             {
                 MachineDetection = "Enable",
-                Url = new Uri(voiceCallbackUrl)
-            });
-        }
+                // TODO: should remove, i don't really need this to clutter my voicemail. Keep the timeout
+                Url = new Uri(voiceCallbackUrl),
+                Timeout = 10
+            };
 
-        [Function("voicemail")]
-        public static async Task<HttpResponseData> RunVoicemail(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "post", "get")] HttpRequestData req)
-        {
-            var twiml = new Twilio.TwiML.VoiceResponse();
-            twiml.Say("This is Veronika's job poller. A new position was just published matching your interests. Check your inbox!");
-            twiml.Hangup();
-
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/xml");
-            await response.WriteStringAsync(twiml.ToString());
-            return response;
+            await CallResource.CreateAsync(callOptions);
         }
 
         [Function("PollGreenhouseJobs")]
@@ -124,19 +116,29 @@ namespace JobSearch
             foreach (var token in tokens)
             {
                 var jobs = await PollCompanyJobsAsync(token, keywords);
-                var recent = jobs.Where(j => j.PublishedAt != null && j.PublishedAt > DateTime.UtcNow.AddMinutes(-30));
-
-                foreach (var job in recent)
+                foreach (var job in jobs)
                 {
                     var body = $"New job found at {token}:\n\n{job.Title}\n{job.AbsoluteUrl}";
                     await SendEmailAsync($"📢 New Job Alert: {job.Title}", body);
                 }
-                
-                if (recent.Any())
+
+                if (jobs.Any())
+                {
+                    _logger.LogInformation($"Found {jobs.Count} new jobs for {token}.");
+                }
+                else
+                {
+                    _logger.LogInformation($"No new jobs found for {token}.");
+                }
+
+                var utcHour = DateTime.UtcNow.Hour;
+                if (jobs.Any() && utcHour >= 13 && utcHour <= 23)
                 {
                     await PlaceVoiceCallAsync();
                 }
             }
         }
-        private readonly IConfiguration _config;}
+        private readonly IConfiguration _config;
+        private readonly ILogger<PollGreenhouseJobs> _logger;
+    }
 }
