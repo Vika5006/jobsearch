@@ -50,9 +50,7 @@ namespace JobSearch
                 var validDate = DateTime.TryParse(publishedStr, out var publishedDate);
                 if (validDate && publishedDate >= DateTime.UtcNow.AddMinutes(-30)
                     && keywords.Any(k => title.Contains(k, StringComparison.OrdinalIgnoreCase))
-                    && (location.Contains("United States", StringComparison.OrdinalIgnoreCase) || location.Contains("US", StringComparison.OrdinalIgnoreCase))
-                    && location.Contains("Remote", StringComparison.OrdinalIgnoreCase))
-                {
+                    && (location.Contains("United States", StringComparison.OrdinalIgnoreCase) || location.Contains("US", StringComparison.OrdinalIgnoreCase)))                {
                     jobs.Add(new JobPosting
                     {
                         Id = job.GetProperty("id").GetInt64(),
