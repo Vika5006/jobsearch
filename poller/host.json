@@ -5,6 +5,12 @@
 	"version": "[3.*, 4.0.0)"
     },
     "logging": {
+        "logLevel": {
+        "default": "Information",
+        "Function": "Trace",
+        "Host.Results": "Error",
+        "Host.Aggregator": "Trace"
+        },
         "applicationInsights": {
             "samplingSettings": {
                 "isEnabled": true,

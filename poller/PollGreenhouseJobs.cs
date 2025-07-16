@@ -17,15 +17,76 @@ namespace JobSearch
         public required string AbsoluteUrl { get; set; }
         public DateTime? PublishedAt { get; set; }
         public required string Location { get; set; }
-    };
+    }
+
+    public class PollerConfiguration
+    {
+        public required string SmtpHost { get; set; }
+        public required string SmtpPort { get; set; }
+        public required string SmtpUser { get; set; }
+        public required string SmtpPass { get; set; }
+        public required string EmailFrom { get; set; }
+        public required string EmailTo { get; set; }
+        public required string TwilioSid { get; set; }
+        public required string TwilioAuth { get; set; }
+        public required string TwilioNumber { get; set; }
+        public required string MyPhone { get; set; }
+        public required string VoiceCallbackUrl { get; set; }
+        public required string CompanyTokens { get; set; }
+        public required string Keywords { get; set; }
+    }
 
     public class PollGreenhouseJobs
     {
-        public PollGreenhouseJobs(IConfiguration config, ILogger<PollGreenhouseJobs> logger)
+        public PollGreenhouseJobs(IConfiguration config, ILoggerFactory loggerFactory)
         {
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _config = config ?? throw new ArgumentNullException(nameof(config));
+            _logger = loggerFactory.CreateLogger<PollGreenhouseJobs>();
+            IConfiguration _config = config ?? throw new ArgumentNullException(nameof(config));
+            _pollerConfig = InitializePollerConfiguration(_config);
         }
+
+        private PollerConfiguration InitializePollerConfiguration(IConfiguration config)
+        {
+            #pragma warning disable CS8601 // Possible null reference assignment.
+            var pollerConfig = new PollerConfiguration
+            {
+                SmtpHost = config["SMTP_HOST"],
+                SmtpPort = config["SMTP_PORT"],
+                SmtpUser = config["SMTP_USER"],
+                SmtpPass = config["SMTP_PASS"],
+                EmailFrom = config["EMAIL_FROM"],
+                EmailTo = config["EMAIL_TO"],
+                TwilioSid = config["TWILIO_SID"],
+                TwilioAuth = config["TWILIO_AUTH"],
+                TwilioNumber = config["TWILIO_NUMBER"],
+                MyPhone = config["MY_PHONE"],
+                VoiceCallbackUrl = config["VOICE_CALLBACK_URL"],
+                CompanyTokens = config["COMPANY_TOKENS"],
+                Keywords = config["KEYWORDS"]
+            };
+#pragma warning restore CS8601 // Possible null reference assignment.
+            return pollerConfig;
+        }
+        
+        private bool IsJobRecent(DateTime publishedDate)
+        {
+            // Convert DateTime.UtcNow.AddMinutes(-60) to CDT, MDT, EDT, PDT
+            var utcNow = DateTime.UtcNow;
+            var adjustedUtcNow = utcNow.AddMinutes(-360);
+
+            var cstZone = TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time");
+            var mstZone = TimeZoneInfo.FindSystemTimeZoneById("Mountain Standard Time");
+            var estZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+            var pstZone = TimeZoneInfo.FindSystemTimeZoneById("Pacific Standard Time");
+
+            var adjustedCst = TimeZoneInfo.ConvertTimeFromUtc(adjustedUtcNow, cstZone);
+            var adjustedMst = TimeZoneInfo.ConvertTimeFromUtc(adjustedUtcNow, mstZone);
+            var adjustedEst = TimeZoneInfo.ConvertTimeFromUtc(adjustedUtcNow, estZone);
+            var adjustedPst = TimeZoneInfo.ConvertTimeFromUtc(adjustedUtcNow, pstZone);
+
+            return publishedDate >= adjustedCst || publishedDate >= adjustedMst || publishedDate >= adjustedEst || publishedDate >= adjustedPst;
+        }
+
         public async Task<List<JobPosting>> PollCompanyJobsAsync(string companyToken, string[] keywords)
         {
             using var client = new HttpClient();
@@ -46,11 +107,12 @@ namespace JobSearch
                 var location = job.TryGetProperty("location", out var locVal) ? Convert.ToString(locVal) : null;
                 if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(urlPath) || string.IsNullOrEmpty(publishedStr) || string.IsNullOrEmpty(location))
                     continue;
-                // Filter jobs published in the last 30 minutes
+
                 var validDate = DateTime.TryParse(publishedStr, out var publishedDate);
-                if (validDate && publishedDate >= DateTime.UtcNow.AddMinutes(-30)
+                if (validDate && IsJobRecent(publishedDate)
                     && keywords.Any(k => title.Contains(k, StringComparison.OrdinalIgnoreCase))
-                    && (location.Contains("United States", StringComparison.OrdinalIgnoreCase) || location.Contains("US", StringComparison.OrdinalIgnoreCase)))                {
+                    && IsUnitedStates(location))
+                {
                     jobs.Add(new JobPosting
                     {
                         Id = job.GetProperty("id").GetInt64(),
@@ -65,41 +127,43 @@ namespace JobSearch
             return jobs;
         }
 
+        private static bool IsUnitedStates(string location)
+        {
+            return location.Contains("United States", StringComparison.OrdinalIgnoreCase) || location.Contains("US", StringComparison.OrdinalIgnoreCase);
+        }
+
         public async Task SendEmailAsync(string subject, string body)
         {
-            using var smtpClient = new SmtpClient(_config["SMTP_HOST"])
+            using var smtpClient = new SmtpClient(_pollerConfig.SmtpHost)
             {
-                Port = int.Parse(_config["SMTP_PORT"]),
-                Credentials = new NetworkCredential(_config["SMTP_USER"], _config["SMTP_PASS"]),
+                Port = int.Parse(_pollerConfig.SmtpPort),
+                Credentials = new NetworkCredential(_pollerConfig.SmtpUser, _pollerConfig.SmtpPass),
                 EnableSsl = true
             };
 
             var mail = new MailMessage
             {
-                From = new MailAddress(_config["EMAIL_FROM"]),
+                From = new MailAddress(_pollerConfig.EmailFrom),
                 Subject = subject,
                 Body = body,
                 IsBodyHtml = false
             };
-            mail.To.Add(_config["EMAIL_TO"]);
+            mail.To.Add(_pollerConfig.EmailTo);
 
             await smtpClient.SendMailAsync(mail);
         }
 
         public async Task PlaceVoiceCallAsync()
         {
-            TwilioClient.Init(_config["TWILIO_SID"], _config["TWILIO_AUTH"]);
-            var voiceCallbackUrl = _config["VOICE_CALLBACK_URL"];
-
+            TwilioClient.Init(_pollerConfig.TwilioSid, _pollerConfig.TwilioAuth);
             var callOptions = new CreateCallOptions(
-                to: new PhoneNumber(_config["MY_PHONE"]),
-                from: new PhoneNumber(_config["TWILIO_NUMBER"])
+                to: new PhoneNumber(_pollerConfig.MyPhone),
+                from: new PhoneNumber(_pollerConfig.TwilioNumber)
             )
             {
                 MachineDetection = "Enable",
-                // TODO: should remove, i don't really need this to clutter my voicemail. Keep the timeout
-                Url = new Uri(voiceCallbackUrl),
-                Timeout = 10
+                Url = new Uri(_pollerConfig.VoiceCallbackUrl),
+                Timeout = 30
             };
 
             await CallResource.CreateAsync(callOptions);
@@ -108,8 +172,8 @@ namespace JobSearch
         [Function("PollGreenhouseJobs")]
         public async Task RunPollGreenhouseJobs([TimerTrigger("0 */30 * * * *")] TimerInfo timer)
         {
-            var tokens = _config["COMPANY_TOKENS"].Split(",", StringSplitOptions.RemoveEmptyEntries);
-            var keywords = _config["KEYWORDS"].Split(",", StringSplitOptions.RemoveEmptyEntries);
+            var tokens = _pollerConfig.CompanyTokens.Split(",", StringSplitOptions.RemoveEmptyEntries);
+            var keywords = _pollerConfig.Keywords.Split(",", StringSplitOptions.RemoveEmptyEntries);
 
             foreach (var token in tokens)
             {
@@ -130,13 +194,14 @@ namespace JobSearch
                 }
 
                 var utcHour = DateTime.UtcNow.Hour;
+                // do not call me at my night
                 if (jobs.Any() && utcHour >= 13 && utcHour <= 23)
                 {
                     await PlaceVoiceCallAsync();
                 }
             }
         }
-        private readonly IConfiguration _config;
         private readonly ILogger<PollGreenhouseJobs> _logger;
+        private readonly PollerConfiguration _pollerConfig;
     }
 }
