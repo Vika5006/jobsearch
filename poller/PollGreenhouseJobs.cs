@@ -30,11 +30,12 @@ namespace JobSearch
 
     public class PollGreenhouseJobs
     {
-        public PollGreenhouseJobs(IConfiguration config, ILoggerFactory loggerFactory)
+        public PollGreenhouseJobs(IConfiguration config, ILoggerFactory loggerFactory, PositionCacheService cache)
         {
             _logger = loggerFactory.CreateLogger<PollGreenhouseJobs>();
             IConfiguration _config = config ?? throw new ArgumentNullException(nameof(config));
             _pollerConfig = InitializePollerConfiguration(_config);
+            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         }
 
         private PollerConfiguration InitializePollerConfiguration(IConfiguration config)
@@ -47,15 +48,15 @@ namespace JobSearch
                 SmtpUser = config["SMTP_USER"],
                 SmtpPass = config["SMTP_PASS"],
                 EmailFrom = config["EMAIL_FROM"],
-                EmailTo = config["EMAIL_TO"],                
+                EmailTo = config["EMAIL_TO"],
                 CompanyTokens = config["COMPANY_TOKENS"],
                 Keywords = config["KEYWORDS"]
             };
-#pragma warning restore CS8601 // Possible null reference assignment.
+            #pragma warning restore CS8601 // Possible null reference assignment.
             return pollerConfig;
         }
-        
-        private bool IsJobRecent(DateTime publishedDate)
+
+        private static bool IsJobRecent(DateTime publishedDate)
         {
             // Convert DateTime.UtcNow.AddMinutes(-60) to CDT, MDT, EDT, PDT
             var utcNow = DateTime.UtcNow;
@@ -91,6 +92,7 @@ namespace JobSearch
             {
                 var title = job.GetProperty("title").GetString();
                 var urlPath = job.GetProperty("absolute_url").GetString();
+                var id = job.GetProperty("id").GetInt64();
                 var publishedStr = job.TryGetProperty("updated_at", out var pubVal) ? pubVal.GetString() : null;
                 var location = job.TryGetProperty("location", out var locVal) ? Convert.ToString(locVal) : null;
                 if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(urlPath) || string.IsNullOrEmpty(publishedStr) || string.IsNullOrEmpty(location))
@@ -99,11 +101,12 @@ namespace JobSearch
                 var validDate = DateTime.TryParse(publishedStr, out var publishedDate);
                 if (validDate && IsJobRecent(publishedDate)
                     && keywords.Any(k => title.Contains(k, StringComparison.OrdinalIgnoreCase))
-                    && IsUnitedStates(location))
+                    && IsUnitedStates(location)
+                    && await _cache.WasNewPositionSentAsync(companyToken, id.ToString()))
                 {
                     jobs.Add(new JobPosting
                     {
-                        Id = job.GetProperty("id").GetInt64(),
+                        Id = id,
                         Title = title,
                         AbsoluteUrl = urlPath,
                         PublishedAt = publishedDate,
@@ -168,5 +171,7 @@ namespace JobSearch
         }
         private readonly ILogger<PollGreenhouseJobs> _logger;
         private readonly PollerConfiguration _pollerConfig;
+        private readonly PositionCacheService _cache;
+
     }
 }

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.ApplicationInsights;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.Extensibility;
+using JobSearch;
 
 var host = Host.CreateDefaultBuilder()
     .ConfigureFunctionsWebApplication()
@@ -28,6 +29,7 @@ var host = Host.CreateDefaultBuilder()
     {
         services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
+        services.AddSingleton<PositionCacheService>();
     })
     .ConfigureLogging(logging =>
     {
