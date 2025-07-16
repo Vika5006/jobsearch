@@ -4,9 +4,6 @@ using System.Text.Json;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Twilio;
-using Twilio.Rest.Api.V2010.Account;
-using Twilio.Types;
 
 namespace JobSearch
 {
@@ -27,11 +24,6 @@ namespace JobSearch
         public required string SmtpPass { get; set; }
         public required string EmailFrom { get; set; }
         public required string EmailTo { get; set; }
-        public required string TwilioSid { get; set; }
-        public required string TwilioAuth { get; set; }
-        public required string TwilioNumber { get; set; }
-        public required string MyPhone { get; set; }
-        public required string VoiceCallbackUrl { get; set; }
         public required string CompanyTokens { get; set; }
         public required string Keywords { get; set; }
     }
@@ -55,12 +47,7 @@ namespace JobSearch
                 SmtpUser = config["SMTP_USER"],
                 SmtpPass = config["SMTP_PASS"],
                 EmailFrom = config["EMAIL_FROM"],
-                EmailTo = config["EMAIL_TO"],
-                TwilioSid = config["TWILIO_SID"],
-                TwilioAuth = config["TWILIO_AUTH"],
-                TwilioNumber = config["TWILIO_NUMBER"],
-                MyPhone = config["MY_PHONE"],
-                VoiceCallbackUrl = config["VOICE_CALLBACK_URL"],
+                EmailTo = config["EMAIL_TO"],                
                 CompanyTokens = config["COMPANY_TOKENS"],
                 Keywords = config["KEYWORDS"]
             };
@@ -72,7 +59,7 @@ namespace JobSearch
         {
             // Convert DateTime.UtcNow.AddMinutes(-60) to CDT, MDT, EDT, PDT
             var utcNow = DateTime.UtcNow;
-            var adjustedUtcNow = utcNow.AddMinutes(-360);
+            var adjustedUtcNow = utcNow.AddMinutes(-60);
 
             var cstZone = TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time");
             var mstZone = TimeZoneInfo.FindSystemTimeZoneById("Mountain Standard Time");
@@ -84,6 +71,7 @@ namespace JobSearch
             var adjustedEst = TimeZoneInfo.ConvertTimeFromUtc(adjustedUtcNow, estZone);
             var adjustedPst = TimeZoneInfo.ConvertTimeFromUtc(adjustedUtcNow, pstZone);
 
+            // This will send me the email multiple times, but Location doesn't have well-defined format so inferring the timezone isn't reliable.
             return publishedDate >= adjustedCst || publishedDate >= adjustedMst || publishedDate >= adjustedEst || publishedDate >= adjustedPst;
         }
 
@@ -153,24 +141,8 @@ namespace JobSearch
             await smtpClient.SendMailAsync(mail);
         }
 
-        public async Task PlaceVoiceCallAsync()
-        {
-            TwilioClient.Init(_pollerConfig.TwilioSid, _pollerConfig.TwilioAuth);
-            var callOptions = new CreateCallOptions(
-                to: new PhoneNumber(_pollerConfig.MyPhone),
-                from: new PhoneNumber(_pollerConfig.TwilioNumber)
-            )
-            {
-                MachineDetection = "Enable",
-                Url = new Uri(_pollerConfig.VoiceCallbackUrl),
-                Timeout = 30
-            };
-
-            await CallResource.CreateAsync(callOptions);
-        }
-
         [Function("PollGreenhouseJobs")]
-        public async Task RunPollGreenhouseJobs([TimerTrigger("0 */30 * * * *")] TimerInfo timer)
+        public async Task RunPollGreenhouseJobs([TimerTrigger("0 */10 * * * *")] TimerInfo timer)
         {
             var tokens = _pollerConfig.CompanyTokens.Split(",", StringSplitOptions.RemoveEmptyEntries);
             var keywords = _pollerConfig.Keywords.Split(",", StringSplitOptions.RemoveEmptyEntries);
@@ -191,13 +163,6 @@ namespace JobSearch
                 else
                 {
                     _logger.LogInformation($"No new jobs found for {token}.");
-                }
-
-                var utcHour = DateTime.UtcNow.Hour;
-                // do not call me at my night
-                if (jobs.Any() && utcHour >= 13 && utcHour <= 23)
-                {
-                    await PlaceVoiceCallAsync();
                 }
             }
         }
