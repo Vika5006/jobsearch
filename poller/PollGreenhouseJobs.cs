@@ -13,6 +13,7 @@ namespace JobSearch
         public required string Title { get; set; }
         public required string AbsoluteUrl { get; set; }
         public DateTime? PublishedAt { get; set; }
+        public DateTime? CreatedAt { get; set; }
         public required string Location { get; set; }
     }
 
@@ -94,6 +95,7 @@ namespace JobSearch
                 var urlPath = job.GetProperty("absolute_url").GetString();
                 var id = job.GetProperty("id").GetInt64();
                 var publishedStr = job.TryGetProperty("updated_at", out var pubVal) ? pubVal.GetString() : null;
+                var createdStr = job.TryGetProperty("first_published", out var createdVal) ? createdVal.GetString() : null;
                 var location = job.TryGetProperty("location", out var locVal) ? Convert.ToString(locVal) : null;
                 if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(urlPath) || string.IsNullOrEmpty(publishedStr) || string.IsNullOrEmpty(location))
                     continue;
@@ -110,6 +112,7 @@ namespace JobSearch
                         Title = title,
                         AbsoluteUrl = urlPath,
                         PublishedAt = publishedDate,
+                        CreatedAt = DateTime.TryParse(createdStr, out var createdDate) ? createdDate : null,
                         Location = location
                     });
                 }
@@ -155,7 +158,7 @@ namespace JobSearch
                 var jobs = await PollCompanyJobsAsync(token, keywords);
                 foreach (var job in jobs)
                 {
-                    var body = $"New job found at {token}:\n\n{job.Title}\n{job.AbsoluteUrl}";
+                    var body = $"New job found at {token}:\n\n{job.Title}\n{job.AbsoluteUrl}. Job created at {job.CreatedAt} in {job.Location}";
                     await SendEmailAsync($"📢 New Job Alert: {job.Title}", body);
                 }
 
