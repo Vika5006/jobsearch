@@ -1,0 +1,24 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "AzureKeyVaultEndpoint": "https://<YOUR-KEYVAULT-NAME>.vault.azure.net/",
+    "APPLICATIONINSIGHTS_CONNECTION_STRING": "<APPINSIGHTS_CONNECTION_STRING>",
+    "APPINSIGHTS_INSTRUMENTATIONKEY": "<APPINSIGHTS_INSTRUMENTATIONKEY>",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+
+    "KEYWORDS": "<KEYWORDS>",
+    "COMPANY_TOKENS": "<COMPANY_TOKENS>",
+
+    "EMAIL_FROM": "<EMAIL_FROM>",
+    "EMAIL_TO": "<EMAIL_TO>",
+    "SMTP_HOST": "<SMTP_HOST>",
+    "SMTP_PORT": "<SMTP_PORT>",
+    "SMTP_USER": "<SMTP_USER>",
+    "SMTP_PASS": "<SMTP_PASS>",
+
+    "StorageAccountName": "<STORAGE_ACCOUNT_NAME>",
+    "StorageAccountKey": "<STORAGE_ACCOUNT_KEY>",
+    "TableUri": "<TABLE_URI>"
+  }
+}
