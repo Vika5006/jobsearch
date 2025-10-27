@@ -1,4 +1,6 @@
-﻿Connect-AzAccount
+﻿# how to generate a zip file: dotnet publish -c Release -o ./publish, and then archive the publish folder/
+
+Connect-AzAccount
 $resourceGroup = "<RESOURCE_GROUP>"
 $functionAppName = "<FUNCTION_APP_NAME>"  # must be globally unique
 
